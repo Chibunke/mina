@@ -27,8 +27,7 @@ module Node = struct
     let base_kube_cmd = "kubectl " ^ String.concat ~sep:" " base_args in
     let kubectl_cmd =
       Printf.sprintf
-        "%s -c archive-node-%d-postgresql exec -i \
-         archive-node-%d-postgresql-0 -- %s"
+        "%s -c archive-%d-postgresql exec -i archive-%d-postgresql-0 -- %s"
         base_kube_cmd n n cmd
     in
     let%bind cwd = Unix.getcwd () in
@@ -417,7 +416,11 @@ module Node = struct
     let%bind logs =
       Deferred.bind ~f:Malleable_error.return (get_logs_in_container "coda" t)
     in
-    let log_lines = String.split logs ~on:'\n' in
+    (* kubectl logs may include non-log output, like "Using password from environment variable" *)
+    let log_lines =
+      String.split logs ~on:'\n'
+      |> List.filter ~f:(String.is_prefix ~prefix:"{\"timestamp\":")
+    in
     let jsons = List.map log_lines ~f:Yojson.Safe.from_string in
     let metadata_jsons =
       List.map jsons ~f:(fun json ->
@@ -444,8 +447,8 @@ module Node = struct
             with
             | Some block -> (
               match List.Assoc.find items ~equal:String.equal "state_hash" with
-              | Some hash ->
-                  (hash, block) :: acc
+              | Some state_hash ->
+                  (state_hash, block) :: acc
               | None ->
                   failwith
                     "Log metadata contains a precomputed block, but no state \
@@ -460,8 +463,14 @@ module Node = struct
     let%bind.Deferred.Let_syntax () =
       Deferred.List.iter state_hash_and_blocks
         ~f:(fun (state_hash_json, block_json) ->
-          let state_hash = Yojson.Safe.to_string state_hash_json in
-          let block = Yojson.Safe.to_string block_json in
+          let double_quoted_state_hash =
+            Yojson.Safe.to_string state_hash_json
+          in
+          let state_hash =
+            String.sub double_quoted_state_hash ~pos:1
+              ~len:(String.length double_quoted_state_hash - 2)
+          in
+          let block = Yojson.Safe.pretty_to_string block_json in
           let filename = state_hash ^ ".json" in
           match%map.Deferred.Let_syntax Sys.file_exists filename with
           | `Yes ->
