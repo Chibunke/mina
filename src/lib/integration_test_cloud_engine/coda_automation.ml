@@ -390,7 +390,7 @@ module Network_manager = struct
     let archive_nodes =
       List.init network_config.terraform.archive_node_count ~f:(fun i ->
           cons_node
-            (sprintf "archive-node-%d" (i + 1))
+            (sprintf "archive-%d" (i + 1))
             (i + 3086 + num_block_producers) )
     in
     let nodes_by_app_id =
@@ -443,6 +443,8 @@ module Network_manager = struct
       (Kubernetes_network.Node.node_list_to_string result.snark_coordinators) ;
     [%log' info t.logger] "block_producers_list: %s"
       (Kubernetes_network.Node.node_list_to_string result.block_producers) ;
+    [%log' info t.logger] "archive_nodes_list: %s"
+      (Kubernetes_network.Node.node_list_to_string result.archive_nodes) ;
     result
 
   let destroy t =
